@@ -76,7 +76,6 @@ class rv32_validator_t : public rv32_validator_base_t {
   bool has_pending_CSR;
   int logIdx;
   bool has_insn_mem_addr;
-  bool rule_cache_hit;
 
 //  meta_set_t temp_ci_tag;
 
@@ -136,6 +135,7 @@ class rv32_validator_t : public rv32_validator_base_t {
   rule_cache_t *rule_cache = nullptr;
   uint64_t rule_cache_hits;
   uint64_t rule_cache_misses;
+  bool rule_cache_hit;
 };
 
 } // namespace policy_engine
