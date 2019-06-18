@@ -28,13 +28,20 @@
 #define TAG_FILE_H
 
 #include <string>
+#include <map>
+#include <vector>
 #include "metadata_memory_map.h"
 
 namespace policy_engine {
 
-bool load_tags(metadata_memory_map_t *map, std::string file_name);
-bool save_tags(metadata_memory_map_t *map, std::string file_name);
-
+  // An arg_val_map maps each address to a vector of arg values stored there
+  typedef std::map<uint32_t, std::vector<uint32_t>*> arg_val_map_t;
+  
+  bool load_tags(metadata_memory_map_t *map, std::string file_name);
+  bool save_tags(metadata_memory_map_t *map, std::string file_name);
+  arg_val_map_t * load_tag_args(metadata_memory_map_t *map, std::string file_name);
+  
+ 
 } // namespace policy_engine
 
 #endif

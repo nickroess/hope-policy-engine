@@ -11,6 +11,7 @@ import ELFSectionTagger
 import OpCodeTagger
 import LLVMMetadataTagger
 import yaml
+import comp_tagger
 
 from elftools.elf.elffile import ELFFile
 from elftools.elf.constants import SH_FLAGS
@@ -76,10 +77,20 @@ def main():
         if 'llvm' in policy_inits['Require']:
             range_map = llvm_tagger.generate_policy_ranges(ef, range_file, policy_inits)
 
+        # Hooking the compartmentalization tagger here. In theory, this info should come from
+        # compiler and be passed in through LLVM metadata, but temp hack is just running
+        # it on application binary.
+        if "comp_learn" in args.policy_dir:
+            print("Compartmentalization policy selected, running compartment tagger...")
+            taginfo_arg_file = open(args.tag_file + ".args", "w")
+            comp_tagger.make_func_range_map(args.bin, range_file, taginfo_arg_file, "comp_defs.h", args.policy_dir)
+        else:
+            print("Not compartmentalization policy, skipping comp_tager")
+          
         range_file.finish();
-
         presult = subprocess.call([md_range, args.policy_dir, range_file.name(),
                                    args.tag_file])
+
         if presult != 0:
             sys.exit(presult)
 
@@ -104,6 +115,7 @@ def main():
         # annotate the asm file
         presult = subprocess.call([md_asm_ann, args.policy_dir, args.tag_file,
                                   asm_file_name])
+        
         if presult != 0:
             sys.exit(presult)
 
