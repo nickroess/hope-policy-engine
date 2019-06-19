@@ -142,7 +142,8 @@ arg_val_map_t * policy_engine::load_tag_args(metadata_memory_map_t *map, std::st
 
       // Add to map on each address
       uint32_t current;
-      for (current = start; current <= end; current +=4 ){
+      for (current = start; current < end; current +=4 ){
+	//printf("Adding to tag arg map on addr %d\n", current);
 	tag_arg_map -> insert(std::pair<uint32_t, std::vector<uint32_t>*>(current, argument_values));
       }
     }

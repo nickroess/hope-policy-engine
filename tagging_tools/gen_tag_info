@@ -83,7 +83,8 @@ def main():
         if "comp_learn" in args.policy_dir:
             print("Compartmentalization policy selected, running compartment tagger...")
             taginfo_arg_file = open(args.tag_file + ".args", "w")
-            comp_tagger.make_func_range_map(args.bin, range_file, taginfo_arg_file, "comp_defs.h", args.policy_dir)
+            comp_tagger.add_function_ranges(args.bin, range_file, taginfo_arg_file, "func_defs.h", args.policy_dir)
+            comp_tagger.add_global_var_ranges(args.bin, range_file, taginfo_arg_file, "global_defs.h", args.policy_dir)
         else:
             print("Not compartmentalization policy, skipping comp_tager")
           
