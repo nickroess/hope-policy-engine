@@ -10,18 +10,24 @@ from elftools.dwarf.descriptions import describe_form_class
 
 # This is the compartment tagger to support compartmentalization policies.
 #
-# In its current form, it simply tags each function with a unique identifier.
+# add_function_ranges() assigns a unique identifier to each function in a program.
+# add_global_ranges() assigns a unique identifier to each global variable.
+# Both functions add their output into a range_file, which gets consumed by md_range
+# to get incorporated into the .taginfo file.
+# The tags placed on these words are either "Comp.funcID" or "Comp.globalID".
+# The actual identifier is added to the .taginfo.args file which eventually
+# gets set on the field values.
 
 # Function to label each function in a program with a unique tag.
 # Puts the Comp.funcID tag on each instruction in the program, then writes
 # a unique identifier for that function in the taginfo.args file.
 # Also generates a func_defs.h header file that maps these identifiers
 # back to strings for pretty printing.
-def add_function_ranges(elf_filename, range_file, taginfo_args_file, headerfile_name = None, policy_dir = None):
+def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir):
 
-    if headerfile_name != None:
-        headerfile = open(headerfile_name, "w")
-        headerfile.write("const char * func_defs[] = {\"<none>\",")
+    # Add defs into func_defs.h
+    defs_file = open("func_defs.h", "w")
+    defs_file.write("const char * func_defs[] = {\"<none>\",")
     
     # Open ELF
     with open(elf_filename, 'rb') as elf_file:
@@ -77,8 +83,7 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, headerfile_
                         taginfo_args_file.write('%x %x %s\n' % (lowpc, highpc - 4, str(function_number) + " 0"))
 
                         # Add this function name to the header file defs if we're making one
-                        if headerfile_name != None:
-                            headerfile.write("\"" + func_display_name + "\",")
+                        defs_file.write("\"" + func_display_name + "\",")
                         function_number += 1
                         
                 except KeyError:
@@ -86,30 +91,17 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, headerfile_
                     continue
 
         # Finish off definition file, then copy into policy include folder
-        if headerfile_name != None:
-            headerfile.write("\"\"};\n")
-            headerfile.close()
-            shutil.copy(headerfile_name, os.path.join(policy_dir, "engine", "policy", "include"))
+        defs_file.write("\"\"};\n")
+        defs_file.close()
+        shutil.copy("func_defs.h", os.path.join(policy_dir, "engine", "policy", "include"))
 
 
-'''
-# This converts an address from the encoding endian-ness of DWARF
-# back to standard form for adding to range file.
-def convert_bytes_to_addr(input_bytes):
-    output = ""
-    for v in input_bytes:
-        # Turn to string
-        hex_val = '%02x' % v
-        output = hex_val + output
-    print("Converted " + str(input_bytes) + " to " + output)
-    return output
-'''
-
+# Analog to add_function_ranges() for extracting global variables. 
 # I tried to get globals via pyelftools, but it doesn't look like the size/type DIEs
 # are parsed for some reason. I spent a few hours and couldn't figure it out. Temp solution
 # is to just dump from nm.
 # TODO: this is currently just dumping global info from nm, should get from compiler metadata
-def add_global_var_ranges(elf_filename, range_file, taginfo_args_file, headerfile_name = None, policy_dir = None):
+def add_global_var_ranges(elf_filename, range_file, taginfo_args_file, policy_dir):
     
     # Check for nm:
     isp_prefix = os.environ['ISP']
@@ -121,9 +113,8 @@ def add_global_var_ranges(elf_filename, range_file, taginfo_args_file, headerfil
         print("WARNING: could not find nm. Looked for " + nm)
         return
 
-    if headerfile_name != None:
-        headerfile = open(headerfile_name, "w")
-        headerfile.write("const char * global_defs[] = {\"<none>\",")    
+    defs_file = open("global_defs.h", "w")
+    defs_file.write("const char * global_defs[] = {\"<none>\",")    
 
     p = subprocess.Popen([nm, "-S", elf_filename], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -140,8 +131,8 @@ def add_global_var_ranges(elf_filename, range_file, taginfo_args_file, headerfil
             code = parts[2]
             name = parts[3]
 
-            # Grab globals
-            if code in ["b", "B", "d", "D"]:
+            # Grab globals. Assuming come from .bss, .data, .ro...
+            if code in ["b", "B", "d", "D", "r", "R", "g", "G"]:
                 global_number += 1
                 print("Compartment tagger: tagging global " + name + " at address " + addr + " size=" + size + " with ID " + str(global_number))
                 
@@ -151,16 +142,14 @@ def add_global_var_ranges(elf_filename, range_file, taginfo_args_file, headerfil
                 highpc = lowpc + size
                 range_file.write_range(lowpc, highpc, "Comp.globalID")
                 taginfo_args_file.write('%x %x %s\n' % (lowpc, highpc, str(global_number) + " 0"))
-                if headerfile_name != None:
-                    headerfile.write("\"" + name + "\",")
+                defs_file.write("\"" + name + "\",")
                 
 
         # Exit when no more output from nm
         if not line:
             break
+        
     # Finish off definition file, then copy into policy include folder
-    
-    if headerfile_name != None:
-        headerfile.write("\"\"};\n")
-        headerfile.close()
-        shutil.copy(headerfile_name, os.path.join(policy_dir, "engine", "policy", "include"))
+    defs_file.write("\"\"};\n")
+    defs_file.close()
+    shutil.copy("global_defs.h", os.path.join(policy_dir, "engine", "policy", "include"))
