@@ -80,7 +80,7 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir)
                         # Add Comp.funcID to taginfo file
                         range_file.write_range(lowpc, highpc, "Comp.funcID")
                         # Set the field for these instruction words in the taginfo_args file.
-                        taginfo_args_file.write('%x %x %s\n' % (lowpc, highpc - 4, str(function_number) + " 0"))
+                        taginfo_args_file.write('%x %x %s\n' % (lowpc, highpc, str(function_number) + " 0"))
 
                         # Add this function name to the header file defs if we're making one
                         defs_file.write("\"" + func_display_name + "\",")
