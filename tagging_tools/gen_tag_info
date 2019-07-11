@@ -69,7 +69,6 @@ def main():
         policies = args.policy_dir.split('.')[-1].split('-')
         llvm_tagger = LLVMMetadataTagger.LLVMMetadataTagger()
 
-        print("inits: " + str(policy_inits['Require']))
         # ELF section tagging
         if 'elf' in policy_inits['Require']:
             ELFSectionTagger.generate_rwx_ranges(ef, range_file)
@@ -84,10 +83,11 @@ def main():
         if 'Comp' in policy_inits['Require']:
             print("Compartmentalization policy selected, running compartment tagger...")
             taginfo_arg_file = open(args.tag_file + ".args", "w")
-            append_defs_file = os.path.join(args.policy_dir, "engine", "policy", "src", "policy_meta_set.c")
-            comp_tagger.add_function_ranges(args.bin, range_file, taginfo_arg_file, args.policy_dir)
-            comp_tagger.add_global_var_ranges(args.bin, range_file, taginfo_arg_file, args.policy_dir)          
+            num_globals = comp_tagger.add_object_ranges(args.bin, range_file, taginfo_arg_file, args.policy_dir)
+            comp_tagger.add_function_ranges(args.bin, range_file, taginfo_arg_file, args.policy_dir, num_globals)
+
         range_file.finish();
+
         presult = subprocess.call([md_range, args.policy_dir, range_file.name(),
                                    args.tag_file])
 
