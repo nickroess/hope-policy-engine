@@ -39,6 +39,7 @@
 #include "ideal_rule_cache.h"
 #include "finite_rule_cache.h"
 #include "dmhc_rule_cache.h"
+#include "tag_file.h"
 
 namespace policy_engine {
 
@@ -56,6 +57,7 @@ public:
 			RegisterReader_t rr);
 
   void apply_metadata(metadata_memory_map_t *md_map);
+  void apply_metadata(metadata_memory_map_t *md_map, arg_val_map_t * tag_arg_map);
   
   // called before we call the policy code - initializes ground state of input/output structures
   void setup_validation();
