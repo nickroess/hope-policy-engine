@@ -181,6 +181,11 @@ rv32_validator_t::rv32_validator_t(meta_set_cache_t *ms_cache,
   has_insn_mem_addr = false;
   rule_cache_hits = 0;
   rule_cache_misses = 0;
+
+  rule_cache_hits_period = 0;
+  rule_cache_misses_period = 0;
+  validated_instructions = 0;
+  next_print_instruction = CACHE_PRINT_FREQ;
 }
 
 bool rv32_validator_t::validate(address_t pc, insn_bits_t insn,
@@ -210,12 +215,14 @@ bool rv32_validator_t::validate(address_t pc, insn_bits_t insn) {
   if (rule_cache) {
     if (rule_cache->allow(ops, res)) {
       rule_cache_hits++;
+      rule_cache_hits_period++;
       rule_cache_hit = true;
       //fprintf(stderr, "Hit: Validating 0x%x %d\n", pc, rule_cache_hits);
       return true;
     }
     else {
       rule_cache_misses++;
+      rule_cache_misses_period++;
       //fprintf(stderr, "Miss: Validating 0x%x %d\n", pc, rule_cache_misses);
       rule_cache_hit = false;
     }
@@ -233,6 +240,9 @@ bool rv32_validator_t::validate(address_t pc, insn_bits_t insn) {
 }
 
 bool rv32_validator_t::commit() {
+
+  validated_instructions += 1;
+  
   bool hit_watch = false;
 
   if (res->pcResult) {
@@ -310,6 +320,17 @@ bool rv32_validator_t::commit() {
 
     if (ctx->cached && !rule_cache->allow(ops, res)) {
       rule_cache->install_rule(ops, &res_copy);
+    }
+
+    if (validated_instructions == next_print_instruction){
+      
+      double hit_rate = 100.0 * (double) rule_cache_hits_period /
+	(rule_cache_hits_period + rule_cache_misses_period);
+      
+      printf("CACHE: %lu %3.3f %lu %lu\n", validated_instructions, hit_rate, rule_cache_misses_period, rule_cache_hits_period);
+      rule_cache_hits_period = 0;
+      rule_cache_misses_period = 0;
+      next_print_instruction += CACHE_PRINT_FREQ;
     }
   }
   return hit_watch;
@@ -434,7 +455,7 @@ void rv32_validator_t::complete_eval() {
 }
 
 void rv32_validator_t::config_rule_cache(const std::string rule_cache_name, int capacity) {
-  printf("%s rule cache with capacity %d!\n", rule_cache_name.c_str(), capacity);
+  printf("%s rule cache with capacity %d! Updated.\n", rule_cache_name.c_str(), capacity);
   for (auto s : rule_cache_name)
     s = tolower(s);
   if (rule_cache_name == "ideal") {
@@ -459,3 +480,7 @@ void rv32_validator_t::rule_cache_stats() {
     fprintf(stderr, "rule cache hit rate was %f%%!\n", hit_rate * 100);
   }
 };
+
+void rv32_validator_t::terminate() {
+  policy_terminate();
+}

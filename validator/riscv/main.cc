@@ -386,3 +386,7 @@ extern "C" void e_v_set_csr_watch(address_t addr){
 extern "C" void e_v_set_mem_watch(address_t addr){
   rv_validator->set_mem_watch(addr);
 }
+
+extern "C" void e_v_terminate(void){
+  rv_validator->terminate();
+}
