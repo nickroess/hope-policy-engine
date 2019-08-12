@@ -34,6 +34,19 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
     # Create new defs file for function labels
     defs_file = open("func_defs.h", "w")
     defs_file.write("const char * func_defs[] = {\"<none>\",\n")
+    
+    # Check to see if there a subject domains file (maps functions to clusters)
+    # If not, we use one function per cluster
+    subject_domains_file = os.path.join(policy_dir, "subject.defs")
+    has_subject_map = os.path.isfile(subject_domains_file)
+    if has_subject_map:
+        print("Found a subject definition file.")
+        subject_map = load_subject_domains(subject_domains_file)
+        for s in range(1, len(set(subject_map.values())) + 1):
+            # Add this function name to the header file defs if we're making one
+            defs_file.write("\"cluster-" + str(s) + "\",\n")
+    else:
+        print("No subject definition file found, using per-function subjects.")
 
     # Get all the malloc() sites, we also put a unique label on each malloc site
     # in this function. TODO could be separate pass.
@@ -104,19 +117,30 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
                         # Add each of these addresses into our set of known instructions
                         for addr in range(lowpc, highpc + 4, 4):
                             tagged_instructions.add(addr)
+
+
+                        # Set subject ID. Depends on if we having a mapping or are doing default function-subjects
+                        if has_subject_map:
+                            if not func_display_name in subject_map:
+                                raise Exception("Provided subject domain mapping did not include function " + func_display_name)
+                            subject_id = subject_map[func_display_name]
+                        else:
+                            subject_id = function_number
                             
                         # Then make another pass, add entries for any malloc() call sites within that range
                         for addr in range(lowpc, highpc, 4):
                             if addr in mallocs:
                                 alloc_num = mallocs[addr]
                                 print("Found a malloc site within this func!")
-                                taginfo_args_file.write('%x %x %s\n' % (addr, addr + 4, str(function_number) + " 0 " + str(alloc_num)))                                
+                                taginfo_args_file.write('%x %x %s\n' % (addr, addr + 4, str(subject_id) + " 0 " + str(alloc_num)))                                
 
                         # Set the field for these instruction words in the taginfo_args file.
-                        taginfo_args_file.write('%x %x %s\n' % (lowpc, highpc, str(function_number) + " 0 0"))
-
-                        # Add this function name to the header file defs if we're making one
-                        defs_file.write("\"" + func_display_name + "\",\n")
+                        taginfo_args_file.write('%x %x %s\n' % (lowpc, highpc, str(subject_id) + " 0 0"))
+                        
+                        if not has_subject_map:
+                            defs_file.write("\"" + func_display_name + "\",\n")
+                        else:
+                            print("\tGot cluster="+str(subject_id))
                         
                 except KeyError:
                     print("KeyError: " + str(KeyError))
@@ -150,15 +174,25 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
                             if addr in tagged_instructions:
                                 continue
 
-                        # Create a new function name, def entry, and add funcID for this CU
-                        cu_src = DIE.attributes["DW_AT_name"].value.decode("utf-8")
-                        function_name = "CU_" + os.path.basename(cu_src)
-                        defs_file.write("\"" + function_name + "\",\n")
-                        function_number += 1
-
                         # Add function to range, mark ID in arg file
                         range_file.write_range(low_pc, high_pc, "Comp.funcID")
-                        taginfo_args_file.write('%x %x %s\n' % (low_pc, high_pc, str(function_number) + " 0 0"))                        
+                        function_number += 1
+                        
+                        # Create a new function name, def entr
+                        cu_src = DIE.attributes["DW_AT_name"].value.decode("utf-8")
+                        function_name = "CU_" + os.path.basename(cu_src)
+                        print("Compartment tagger: tagging function " + function_name)
+                        
+                        if not has_subject_map:
+                            defs_file.write("\"" + function_name + "\",\n")
+                            taginfo_args_file.write('%x %x %s\n' % (low_pc, high_pc, str(function_number) + " 0 0"))                            
+                        else:
+                            if not function_name in subject_map:
+                                raise Exception("Provided subject domain mapping did not include function " + function_name)
+                            subject_id = subject_map[function_name]
+                            print("\tGot cluster="+str(subject_id))
+                            print("Writing from %x to %x\n" % (lowpc, highpc))
+                            taginfo_args_file.write('%x %x %s\n' % (low_pc, high_pc, str(subject_id) + " 0 0"))
 
                         # Track that these instructions are now labeled
                         for addr in range(low_pc, high_pc + 4, 4):
@@ -186,6 +220,23 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
     shutil.copy("func_defs.h", os.path.join(policy_dir, "engine", "policy", "include"))
     print("Done tagging functions.")
 
+# Load in a subject definition file, return as a dict
+def load_subject_domains(filename):
+    
+    fh = open(filename, "r")
+    subject_map = {}
+    
+    for line in fh:
+        parts = line.split()
+        if len(parts) != 2:
+            raise Exception("Format error of subject defs file. Expected two tokens.")
+        func_name = parts[0]
+        cluster_id = int(parts[1])
+        print("Adding mapping " + func_name + " -> " + str(cluster_id))
+        subject_map[func_name] = cluster_id
+
+    return subject_map
+        
 # Analog to add_function_ranges() for extracting objects.  I tried to
 # get globals via pyelftools, but it doesn't look like the size/type
 # DIEs are parsed for some reason. I spent a few hours and couldn't
@@ -194,7 +245,7 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
 def add_object_ranges(elf_filename, range_file, taginfo_args_file, policy_dir):
     
     # Check to make sure we have the tools we need for object extraction
-    isp_prefix = os.environ['ISP']
+    isp_prefix = os.environ['ISP_PREFIX']
     nm = os.path.join(isp_prefix, "riscv32-unknown-elf", "bin", "nm")
 
     if not os.path.isfile(nm):
@@ -332,7 +383,7 @@ def add_object_ranges(elf_filename, range_file, taginfo_args_file, policy_dir):
 def extract_malloc_sites(elf_filename, policy_dir, heap_id_start):
     
     # Check for objdump:
-    isp_prefix = os.environ['ISP']
+    isp_prefix = os.environ['ISP_PREFIX']
     objdump = os.path.join(isp_prefix, "riscv32-unknown-elf", "bin", "objdump")
 
     if not os.path.isfile(objdump):
