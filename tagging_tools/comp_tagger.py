@@ -69,7 +69,8 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
 
         dwarfinfo = ef.get_dwarf_info()
 
-        function_number = 0
+        last_function_number = 0
+        function_numbers = {}
 
         # Code tagging pass 1:
         # Iterate through each compilation unit, take each function that has
@@ -85,11 +86,28 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
                             print("Skipping a subprogram DIE.")
                             continue
 
-                        function_number += 1                        
                         
                         func_name = DIE.attributes["DW_AT_name"].value.decode("utf-8")
                         func_display_name = str(func_name)
                         print("Compartment tagger: tagging function " + func_display_name)
+
+                        # Assign new ID for this function if it's new.
+                        # Currently two functions with the same name get the same number,
+                        # which is not ideal but a result of how CAPMAP files are saved/loaded.
+                        if func_name in function_numbers:
+                            function_number = function_numbers[func_name]
+                        else:
+                            last_function_number += 1
+                            function_number = last_function_number
+                            function_numbers[func_name] = function_number
+
+                            # Create new line in defs file for this function
+                            if not has_subject_map:
+                                defs_file.write("\"" + func_display_name + "\",\n")
+                            else:
+                                subject_id = subject_map[func_display_name]                                
+                                print("\tGot cluster="+str(subject_id))
+                            
                         
                         lowpc = DIE.attributes['DW_AT_low_pc'].value
 
@@ -136,12 +154,7 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
 
                         # Set the field for these instruction words in the taginfo_args file.
                         taginfo_args_file.write('%x %x %s\n' % (lowpc, highpc, str(subject_id) + " 0 0"))
-                        
-                        if not has_subject_map:
-                            defs_file.write("\"" + func_display_name + "\",\n")
-                        else:
-                            print("\tGot cluster="+str(subject_id))
-                        
+                                                
                 except KeyError:
                     print("KeyError: " + str(KeyError))
                     continue
@@ -182,6 +195,11 @@ def add_function_ranges(elf_filename, range_file, taginfo_args_file, policy_dir,
                         cu_src = DIE.attributes["DW_AT_name"].value.decode("utf-8")
                         function_name = "CU_" + os.path.basename(cu_src)
                         print("Compartment tagger: tagging function " + function_name)
+
+                        # If it's from portASM, add that over it too
+                        if "portASM" in function_name:
+                            print("Adding context-switch from " + hex(low_pc) + " to " + str(high_pc))
+                            range_file.write_range(low_pc, high_pc, "Comp.context-switch")
                         
                         if not has_subject_map:
                             defs_file.write("\"" + function_name + "\",\n")
@@ -256,13 +274,16 @@ def add_object_ranges(elf_filename, range_file, taginfo_args_file, policy_dir):
     # 1 = Special-IO, a special tag that goes on all mapped IO devices
     # 2 = Special-RAM, a special tag on all RAM that didn't get labeled as something else
     # 3 = Special-FLASH, a special tag for Flash mem that didn't get labeled as something else
+    # 4 = Special-UART, a special tag for UART mem
+    # 5 = Special-PLIC, a special tag for PLIC mem
+    # 6 = Special-ETHERNET, a special tag for ETHERNET 
 
     # Start incrementing from 3, the end of the special objects
-    object_number = 3
+    object_number = 6
 
     # Create file for object definition labels
     defs_file = open("object_defs.h", "w")
-    defs_file.write("const char * object_defs[] = {\n\"<none>\",\n\"special-IO\",\n\"special-RAM\",\n\"special-FLASH\",\n")
+    defs_file.write("const char * object_defs[] = {\n\"<none>\",\n\"special-IO\",\n\"special-RAM\",\n\"special-FLASH\",\n\"special-UART\",\n\"special-PLIC\",\n\"special-ETHERNET\",\n")
 
     # Keep track of which addresses we've labeled
     tagged_addrs = {}    
